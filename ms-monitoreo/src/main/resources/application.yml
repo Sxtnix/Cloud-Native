@@ -1,0 +1,49 @@
+server:
+  port: 8086
+
+spring:
+  application:
+    name: ms-monitoreo
+
+  # Broker de eventos Kafka (KRaft / Brokers)
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: ms-monitoreo-group
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+
+  # Broker de mensajería RabbitMQ para administración (EP3)
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${AZURE_ISSUER_URI:https://login.microsoftonline.com/9150f81f-b0fc-436d-998d-dcb5cf883d2e/v2.0}
+
+app:
+  auth:
+    bypass: ${AUTH_BYPASS:false}
+
+  # Amazon DynamoDB (NoSQL, +2 puntos): DynamoDB Local en docker-compose.
+  # DYNAMODB_ENABLED=false fuerza el respaldo en memoria.
+  dynamodb:
+    enabled: ${DYNAMODB_ENABLED:true}
+    endpoint: ${DYNAMODB_ENDPOINT:http://localhost:8000}
+    region: ${AWS_REGION:us-east-1}
+    table: ${DYNAMODB_TABLE:pedidos360_navegacion}
+
+  # Nombres de los tópicos Kafka (EP5)
+  kafka:
+    topic-monitoreo: ${KAFKA_TOPIC_MONITOREO:pedidos360.monitoreo}
+    topic-navegacion: ${KAFKA_TOPIC_NAVEGACION:pedidos360.navegacion}
+    topic-alertas: ${KAFKA_TOPIC_ALERTAS:pedidos360.alertas}

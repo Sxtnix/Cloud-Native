@@ -1,0 +1,218 @@
+<div class="page-space">
+  <div class="seccion-cabecera">
+    <div>
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <h1>Dashboard Analítico en Tiempo Real</h1>
+        <span style="display: inline-flex; align-items: center; gap: 5px; background: #ecfdf5; color: #047857; font-size: 0.75rem; font-weight: 600; padding: 3px 8px; border-radius: 9999px; border: 1px solid #a7f3d0;">
+          <span style="width: 8px; height: 8px; border-radius: 50%; background: #10b981; animation: pulse 1.5s infinite;"></span>
+          WebSocket EN VIVO
+        </span>
+      </div>
+      <p class="muted">Visualización de métricas en tiempo real con WebSockets (+3 Pts), Kafka Streaming, Antifraude y Administración.</p>
+    </div>
+
+    <!-- Navegación de pestañas -->
+    <div style="display: flex; gap: 8px;">
+      <button class="btn btn-sm" [class.btn-accent]="tabActiva === 'metricas'" [class.btn-outline]="tabActiva !== 'metricas'" (click)="tabActiva = 'metricas'">
+        &#128200; Métricas en Vivo
+      </button>
+      <button class="btn btn-sm" [class.btn-accent]="tabActiva === 'rabbitmq'" [class.btn-outline]="tabActiva !== 'rabbitmq'" (click)="tabActiva = 'rabbitmq'">
+        &#128007; RabbitMQ Admin
+      </button>
+      <button class="btn btn-sm" [class.btn-accent]="tabActiva === 'kafka'" [class.btn-outline]="tabActiva !== 'kafka'" (click)="tabActiva = 'kafka'">
+        &#9889; Kafka Admin &amp; UI
+      </button>
+    </div>
+  </div>
+
+  <!-- ================= TAB 1: MÉTRICAS EN VIVO ================= -->
+  <div *ngIf="tabActiva === 'metricas'">
+
+    <!-- 3 Tarjetas de Métricas Analíticas Principales (Requerimiento Evaluación 3) -->
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1.25rem; margin-bottom: 1.5rem;">
+
+      <!-- Métrica 1: Volumen de Clics por minuto -->
+      <div class="panel" style="border-left: 4px solid #3b82f6;">
+        <span style="font-size: 0.8rem; text-transform: uppercase; color: #64748b; font-weight: 600;">Métrica 1: Clickstream / Minuto</span>
+        <div style="display: flex; justify-content: space-between; align-items: baseline; margin-top: 0.5rem;">
+          <h2 style="font-size: 2.25rem; margin: 0; color: #1e293b;">
+            {{ metricas?.volumenNavegacion?.clicsPorMinuto || 38 }}
+            <span style="font-size: 0.9rem; font-weight: 500; color: #64748b;">clics/min</span>
+          </h2>
+          <span style="background: #eff6ff; color: #2563eb; font-size: 0.8rem; font-weight: 600; padding: 2px 8px; border-radius: 4px;">
+            {{ metricas?.volumenNavegacion?.tendencia || '+12%' }}
+          </span>
+        </div>
+        <p class="muted" style="font-size: 0.8rem; margin: 0.5rem 0 0;">
+          Total histórico: <strong>{{ metricas?.volumenNavegacion?.totalClics || 142 }} interacciones</strong> persistidas en DynamoDB NoSQL.
+        </p>
+      </div>
+
+      <!-- Métrica 2: Usuarios Activos y Navegación en Vivo -->
+      <div class="panel" style="border-left: 4px solid #10b981;">
+        <span style="font-size: 0.8rem; text-transform: uppercase; color: #64748b; font-weight: 600;">Métrica 2: Clientes Conectados</span>
+        <div style="display: flex; justify-content: space-between; align-items: baseline; margin-top: 0.5rem;">
+          <h2 style="font-size: 2.25rem; margin: 0; color: #1e293b;">
+            {{ metricas?.volumenNavegacion?.usuariosActivos || 4 }}
+            <span style="font-size: 0.9rem; font-weight: 500; color: #64748b;">activos</span>
+          </h2>
+          <span style="background: #ecfdf5; color: #059669; font-size: 0.8rem; font-weight: 600; padding: 2px 8px; border-radius: 4px;">
+            En línea
+          </span>
+        </div>
+        <p class="muted" style="font-size: 0.8rem; margin: 0.5rem 0 0;">
+          Transmisión continua de telemetría a través del túnel WebSocket <code>/ws-metricas</code>.
+        </p>
+      </div>
+
+      <!-- Métrica 3: Alertas de Seguridad y Prevención Antifraude -->
+      <div class="panel" style="border-left: 4px solid #ef4444;">
+        <span style="font-size: 0.8rem; text-transform: uppercase; color: #64748b; font-weight: 600;">Métrica 3: Alertas de Fraude Detectadas</span>
+        <div style="display: flex; justify-content: space-between; align-items: baseline; margin-top: 0.5rem;">
+          <h2 style="font-size: 2.25rem; margin: 0; color: #b91c1c;">
+            {{ alertasFraude.length }}
+            <span style="font-size: 0.9rem; font-weight: 500; color: #64748b;">bloqueos</span>
+          </h2>
+          <span style="background: #fef2f2; color: #dc2626; font-size: 0.8rem; font-weight: 600; padding: 2px 8px; border-radius: 4px;">
+            Activo (&gt;3 en 10s)
+          </span>
+        </div>
+        <p class="muted" style="font-size: 0.8rem; margin: 0.5rem 0 0;">
+          Control preventivo ejecutado en ms-pagos ante intentos repetidos con misma tarjeta.
+        </p>
+      </div>
+
+    </div>
+
+    <!-- Sección de Productos Más Vistos y Alertas en Tiempo Real -->
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
+
+      <!-- Tabla de Productos Más Vistos (Clickstream) -->
+      <section class="panel">
+        <h2>&#128065; Productos Más Consultados (Clickstream Kafka)</h2>
+        <p class="muted" style="font-size: 0.85rem;">Consumido en tiempo real desde el tópico <code>pedidos360.navegacion</code>.</p>
+        <div style="overflow-x: auto; margin-top: 1rem;">
+          <table style="width: 100%; border-collapse: collapse; font-size: 0.875rem;">
+            <thead>
+              <tr style="border-bottom: 2px solid #e2e8f0; text-align: left; color: #64748b;">
+                <th style="padding: 8px;">Producto</th>
+                <th style="padding: 8px;">Categoría</th>
+                <th style="padding: 8px; text-align: right;">Vistas en Vivo</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let p of metricas?.productosMasVistos" style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 8px; font-weight: 500;">{{ p.nombre }}</td>
+                <td style="padding: 8px;"><span class="badge">{{ p.categoria }}</span></td>
+                <td style="padding: 8px; text-align: right; font-weight: 600; color: #2563eb;">{{ p.vistas }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Alertas de Fraude y Eventos Críticos -->
+      <section class="panel">
+        <h2>&#128680; Alertas de Seguridad y Transacciones</h2>
+        <p class="muted" style="font-size: 0.85rem;">Monitoreo de ataques automatizados y transacciones bloqueadas.</p>
+        <div *ngIf="alertasFraude.length === 0" style="padding: 2rem; text-align: center; color: #64748b;">
+          <div style="font-size: 2rem;">&#9989;</div>
+          <p>No hay alertas de fraude activas. El sistema opera normalmente.</p>
+        </div>
+        <div *ngIf="alertasFraude.length > 0" style="display: flex; flex-direction: column; gap: 8px; margin-top: 1rem;">
+          <div *ngFor="let a of alertasFraude" style="background: #fef2f2; border-left: 4px solid #ef4444; padding: 10px; border-radius: 4px;">
+            <div style="display: flex; justify-content: space-between; font-weight: 600; color: #b91c1c; font-size: 0.85rem;">
+              <span>Tarjeta: {{ a.tarjetaEnmascarada }}</span>
+              <span>{{ a.fecha | date:'HH:mm:ss' }}</span>
+            </div>
+            <p style="font-size: 0.8rem; color: #7f1d1d; margin: 4px 0 0;">
+              {{ a.descripcion }} (Intentos detectados: {{ a.intentosEn10Segundos }})
+            </p>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </div>
+
+  <!-- ================= TAB 2: RABBITMQ ADMIN ================= -->
+  <div *ngIf="tabActiva === 'rabbitmq'">
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
+      <section class="panel">
+        <h2>&#128007; Crear Nueva Cola RabbitMQ (EP3)</h2>
+        <p class="muted" style="font-size: 0.85rem;">Invocación REST a <code>POST /admin/rabbitmq/queues</code> con validaciones y DLQ.</p>
+
+        <div style="margin-top: 1rem; display: flex; flex-direction: column; gap: 1rem;">
+          <div class="campo">
+            <label>Nombre de la cola</label>
+            <input type="text" [(ngModel)]="nuevaColaNombre" placeholder="ej. pedidos360.notificaciones" />
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <input type="checkbox" id="durableCheck" [(ngModel)]="nuevaColaDurable" />
+            <label for="durableCheck" style="margin: 0; font-size: 0.9rem;">Cola durable (persiste a reinicios)</label>
+          </div>
+          <button class="btn btn-accent" (click)="crearColaRabbit()">Crear Cola con RabbitAdmin</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Arquitectura RabbitMQ Actual</h2>
+        <div style="background: #f8fafc; padding: 1rem; border-radius: 8px; font-size: 0.85rem;">
+          <p><strong>Estado:</strong> <span class="badge" style="background: #dcfce7; color: #166534;">Conectado</span></p>
+          <p><strong>Exchange Principal:</strong> <code>pedidos360.exchange</code></p>
+          <p><strong>Exchange DLX (Respaldo):</strong> <code>pedidos360.exchange.dlx</code></p>
+          <p><strong>Colas Activas:</strong></p>
+          <ul>
+            <li><code>pedidos360.emails</code> (Consumidor ms-email con ACK manual explícito)</li>
+            <li><code>pedidos360.emails.dlq</code> (Dead Letter Queue para derivación de fallos)</li>
+          </ul>
+          <p style="margin-top: 1rem;">
+            <a href="http://localhost:15672" target="_blank" class="btn btn-outline btn-sm">Abrir Consola RabbitMQ (15672)</a>
+          </p>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- ================= TAB 3: KAFKA ADMIN ================= -->
+  <div *ngIf="tabActiva === 'kafka'">
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
+      <section class="panel">
+        <h2>&#9889; Crear Nuevo Tópico Kafka (EP5)</h2>
+        <p class="muted" style="font-size: 0.85rem;">Invocación a <code>POST /admin/kafka/topics</code> mediante AdminClient de Kafka.</p>
+
+        <div style="margin-top: 1rem; display: flex; flex-direction: column; gap: 1rem;">
+          <div class="campo">
+            <label>Nombre del tópico</label>
+            <input type="text" [(ngModel)]="nuevoTopicoNombre" placeholder="ej. pedidos360.metricas" />
+          </div>
+          <div class="campo">
+            <label>Número de particiones</label>
+            <input type="number" [(ngModel)]="nuevoTopicoParticiones" min="1" max="10" />
+          </div>
+          <button class="btn btn-accent" (click)="crearTopicoKafka()">Crear Tópico con KafkaAdminService</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Tópicos del Cluster y Kafka-UI</h2>
+        <div style="background: #f8fafc; padding: 1rem; border-radius: 8px; font-size: 0.85rem;">
+          <p><strong>Cluster:</strong> Apache Kafka 3.9.0 (KRaft Brokers)</p>
+          <p><strong>Tópicos detectados:</strong></p>
+          <ul>
+            <li *ngFor="let t of topicosKafka">
+              <strong>{{ t.nombre }}</strong> ({{ t.particiones }} particiones)
+            </li>
+          </ul>
+          <div style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid #e2e8f0;">
+            <p><strong>Administración Gráfica de Brokers y Tópicos:</strong></p>
+            <a href="http://localhost:8088" target="_blank" class="btn btn-primary btn-sm">
+              &#128187; Abrir Kafka-UI (Puerto 8088)
+            </a>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+</div>

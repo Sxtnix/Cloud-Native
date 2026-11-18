@@ -1,0 +1,55 @@
+server:
+  port: 8084
+
+spring:
+  application:
+    name: ms-email
+
+  # Credenciales SMTP: SIEMPRE por variables de entorno, nunca en el repositorio.
+  mail:
+    host: ${MAIL_HOST:smtp.gmail.com}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true
+
+  # Broker de mensajes RabbitMQ
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+    listener:
+      simple:
+        acknowledge-mode: manual # Confirmación de ACK manual/explícita (EP3)
+        default-requeue-rejected: false
+        retry:
+          enabled: true
+          max-attempts: 3
+          initial-interval: 2000
+          multiplier: 2.0
+          max-interval: 10000
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${AZURE_ISSUER_URI:https://login.microsoftonline.com/9150f81f-b0fc-436d-998d-dcb5cf883d2e/v2.0}
+
+# Configuración centralizada de RabbitMQ (EP3)
+app:
+  auth:
+    bypass: ${AUTH_BYPASS:false}
+  rabbitmq:
+    exchange: ${RABBITMQ_EXCHANGE:pedidos360.exchange}
+    exchange-dlx: ${RABBITMQ_EXCHANGE_DLX:pedidos360.exchange.dlx}
+    queue-email: ${RABBITMQ_QUEUE_EMAIL:pedidos360.emails}
+    queue-dlq: ${RABBITMQ_QUEUE_DLQ:pedidos360.emails.dlq}
+    routing-key-email: ${RABBITMQ_ROUTING_KEY_EMAIL:pedidos360.emails.routing}
+    routing-key-dlq: ${RABBITMQ_ROUTING_KEY_DLQ:pedidos360.emails.dlq.routing}

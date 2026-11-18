@@ -1,0 +1,49 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: ms-productos
+
+  datasource:
+    url: ${DB_URL:jdbc:h2:mem:pedidos360_productos}
+    username: ${DB_USERNAME:sa}
+    password: ${DB_PASSWORD:}
+    driver-class-name: org.h2.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.H2Dialect
+
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${AZURE_ISSUER_URI:https://login.microsoftonline.com/9150f81f-b0fc-436d-998d-dcb5cf883d2e/v2.0}
+
+app:
+  auth:
+    bypass: ${AUTH_BYPASS:false}
+
+  catalogo:
+    seed: ${CATALOGO_SEED:true}
+
+  # Nombres de los tópicos Kafka (EP5)
+  kafka:
+    topic-navegacion: ${KAFKA_TOPIC_NAVEGACION:pedidos360.navegacion}

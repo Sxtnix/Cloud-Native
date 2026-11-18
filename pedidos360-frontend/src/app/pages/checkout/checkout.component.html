@@ -1,0 +1,214 @@
+<div class="page-space">
+
+  <!-- ============ RESULTADOS ============ -->
+  <ng-container *ngIf="resultado === 'aprobado'">
+    <div class="resultado-estado ok">
+      <div class="resultado-icono" aria-hidden="true">&#10003;</div>
+      <h1>Pago aprobado</h1>
+      <p *ngIf="pedido">
+        Tu pedido <strong>#{{ pedido.id }}</strong> está confirmado por
+        <strong>${{ pedido.total | number:'1.0-0' }}</strong>.
+        El pago fue procesado directamente por <strong>ms-pagos</strong> y notificado a <strong>ms-carrito</strong> y <strong>ms-email</strong> vía mensajería.
+      </p>
+      <div class="resultado-acciones">
+        <a routerLink="/pedidos" class="btn btn-accent btn-lg">Ver mis pedidos</a>
+        <a routerLink="/catalogo" class="btn btn-outline btn-lg">Seguir comprando</a>
+      </div>
+    </div>
+  </ng-container>
+
+  <ng-container *ngIf="resultado === 'fraude'">
+    <div class="resultado-estado error" style="border: 2px solid #ef4444; background: #fef2f2;">
+      <div class="resultado-icono" aria-hidden="true">&#128680;</div>
+      <h1 style="color: #b91c1c;">Transacción Bloqueada por Antifraude</h1>
+      <p style="color: #991b1b; max-width: 650px; margin: 0 auto 1.5rem;">
+        {{ errorPago }}
+      </p>
+      <div class="alert alert-error" style="text-align: left; max-width: 600px; margin: 0 auto 1.5rem;">
+        <strong>Regla Evaluativa Activada:</strong> Se detectaron más de 3 intentos con la misma tarjeta en menos de 10 segundos.
+        El microservicio <strong>ms-pagos</strong> bloqueó la transacción de forma preventiva para evitar robos masivos y registró la alerta en el sistema y en Kafka.
+      </div>
+      <div class="resultado-acciones">
+        <button class="btn btn-primary btn-lg" type="button" (click)="reiniciar()">Reintentar con otra tarjeta</button>
+        <a routerLink="/dashboard" class="btn btn-outline btn-lg">Ver Alerta en Dashboard</a>
+      </div>
+    </div>
+  </ng-container>
+
+  <ng-container *ngIf="resultado === 'rechazado'">
+    <div class="resultado-estado error">
+      <div class="resultado-icono" aria-hidden="true">&#10005;</div>
+      <h1>Pago rechazado</h1>
+      <p *ngIf="pedido">
+        El pago del pedido <strong>#{{ pedido.id }}</strong> fue rechazado.
+        El pedido quedó cancelado y tu carrito fue restaurado.
+      </p>
+      <div class="resultado-acciones">
+        <button class="btn btn-primary btn-lg" type="button" (click)="reiniciar()">Intentar de nuevo</button>
+        <a routerLink="/carrito" class="btn btn-outline btn-lg">Volver al carrito</a>
+      </div>
+    </div>
+  </ng-container>
+
+  <ng-container *ngIf="resultado === 'fallo'">
+    <div class="resultado-estado error">
+      <div class="resultado-icono" aria-hidden="true">!</div>
+      <h1>No pudimos completar la compra</h1>
+      <p>{{ errorPago || 'Ocurrió un error inesperado al comunicar con ms-pagos.' }}</p>
+      <div class="resultado-acciones">
+        <button class="btn btn-primary btn-lg" type="button" (click)="confirmar()">Reintentar</button>
+        <a routerLink="/carrito" class="btn btn-outline btn-lg">Volver al carrito</a>
+      </div>
+    </div>
+  </ng-container>
+
+  <!-- ============ FORMULARIO DE CHECKOUT ============ -->
+  <div *ngIf="!resultado">
+    <div class="seccion-cabecera">
+      <div>
+        <h1>Checkout</h1>
+        <p class="muted">Pago directo a microservicio de pagos (sin proxy en backend).</p>
+      </div>
+      <a routerLink="/carrito" class="btn btn-outline btn-sm">Volver al carrito</a>
+    </div>
+
+    <div class="loading" *ngIf="cargando">
+      <div class="spinner"></div>
+      Cargando carrito...
+    </div>
+
+    <div class="alert alert-error" *ngIf="error && !cargando">
+      {{ error }}
+      <a routerLink="/catalogo" class="btn btn-sm btn-secondary">Ir al catálogo</a>
+    </div>
+
+    <div class="checkout-layout" *ngIf="!cargando && items.length > 0">
+      <div class="checkout-main">
+
+        <section class="panel">
+          <h2>1. Método de pago</h2>
+          <p class="muted">Gestión de pagos y regla de seguridad antifraude.</p>
+
+          <div class="metodo-grid">
+            <button class="metodo-card" type="button"
+                    [class.active]="metodoPago === m"
+                    *ngFor="let m of metodos"
+                    (click)="metodoPago = m">
+              <span class="metodo-icono" aria-hidden="true">
+                {{ m === 'TARJETA_CREDITO' ? '&#128179;' : m === 'TARJETA_DEBITO' ? '&#128179;' : m === 'WEBPAY' ? '&#128279;' : '&#128181;' }}
+              </span>
+              <span class="metodo-nombre">{{ etiquetas[m] }}</span>
+            </button>
+          </div>
+
+          <!-- Formulario de tarjeta -->
+          <div class="form-grid" *ngIf="esTarjeta">
+            <div class="campo">
+              <label for="numero">Número de tarjeta</label>
+              <input id="numero" type="text" inputmode="numeric" autocomplete="cc-number"
+                     maxlength="19" placeholder="4111 1111 1111 1111"
+                     [(ngModel)]="tarjeta.numero" (input)="formatearNumero()" />
+            </div>
+            <div class="campo">
+              <label for="titular">Titular de la tarjeta</label>
+              <input id="titular" type="text" autocomplete="cc-name"
+                     placeholder="Nombre y Apellido"
+                     [(ngModel)]="tarjeta.titular" />
+            </div>
+            <div class="campo campo-corto">
+              <label for="vence">Vencimiento</label>
+              <input id="vence" type="text" inputmode="numeric" autocomplete="cc-exp"
+                     maxlength="5" placeholder="MM/AA"
+                     [(ngModel)]="tarjeta.vencimiento" (input)="formatearVencimiento()" />
+            </div>
+            <div class="campo campo-corto">
+              <label for="cvv">CVV</label>
+              <input id="cvv" type="password" inputmode="numeric" autocomplete="cc-csc"
+                     maxlength="3" placeholder="123"
+                     [(ngModel)]="tarjeta.cvv" />
+            </div>
+          </div>
+
+          <!-- Webpay Plus (+5 puntos extra) -->
+          <div class="demo-info" *ngIf="metodoPago === 'WEBPAY'">
+            <strong>Webpay Plus Integrado (+5 puntos extra).</strong>
+            Al confirmar, se generará la transacción simulada de Webpay Plus con token seguro de Transbank.
+          </div>
+
+          <!-- Transferencia -->
+          <div class="demo-info" *ngIf="metodoPago === 'TRANSFERENCIA'">
+            <strong>Transferencia bancaria.</strong>
+            Confirmación directa vía pasarela bancaria interna.
+          </div>
+
+          <!-- Panel de Demostración y Pruebas Antifraude -->
+          <div style="background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 8px; padding: 1rem; margin-top: 1.5rem;">
+            <div style="font-weight: 600; margin-bottom: 0.5rem; color: #1e293b;">
+              Panel de Evaluación: Reglas y Seguridad
+            </div>
+
+            <div class="demo-toggle" style="margin-bottom: 0.75rem;">
+              <label class="switch">
+                <input type="checkbox" [(ngModel)]="simularRechazo" />
+                <span class="switch-slider" aria-hidden="true"></span>
+              </label>
+              <span>
+                <strong>Simular pago rechazado</strong>
+                <small style="display: block; color: #64748b;">Para demostrar camino de error en el banco.</small>
+              </span>
+            </div>
+
+            <div>
+              <button type="button" class="btn btn-outline btn-sm" style="color: #b91c1c; border-color: #f87171;"
+                      (click)="probarAtaqueAntifraude()">
+                &#128680; Probar Regla Antifraude (4 intentos en 2s)
+              </button>
+              <small style="display: block; color: #64748b; margin-top: 4px;">
+                Dispara 4 intentos rápidos para evidenciar el bloqueo preventivo por más de 3 intentos en 10s.
+              </small>
+            </div>
+          </div>
+
+        </section>
+
+        <section class="panel">
+          <h2>2. Tu pedido</h2>
+          <div class="pedido-resumen-item" *ngFor="let item of items">
+            <img [src]="item.imagenUrl || imagenDefecto" [alt]="item.nombreProducto" />
+            <div class="pedido-resumen-info">
+              <strong>{{ item.nombreProducto }}</strong>
+              <span class="muted">{{ item.cantidad }} × ${{ item.precioUnitario | number:'1.0-0' }}</span>
+            </div>
+            <span>${{ item.precioUnitario * item.cantidad | number:'1.0-0' }}</span>
+          </div>
+        </section>
+
+      </div>
+
+      <aside class="resumen-card">
+        <h2>Resumen</h2>
+        <div class="resumen-fila"><span>Productos ({{ items.length }})</span>
+          <span>${{ total | number:'1.0-0' }}</span></div>
+        <div class="resumen-fila"><span>Envío</span><span class="texto-exito">Gratis</span></div>
+        <div class="resumen-fila" *ngIf="metodoPago"><span>Pago</span>
+          <span>{{ etiquetas[metodoPago] }}</span></div>
+
+        <div class="resumen-total">
+          <span>Total</span><span>${{ total | number:'1.0-0' }}</span>
+        </div>
+
+        <div class="alert alert-error" *ngIf="errorPago && !procesando && !error">{{ errorPago }}</div>
+
+        <button class="btn btn-accent btn-lg btn-bloque" type="button"
+                [disabled]="!puedePagar || procesando"
+                (click)="confirmar()">
+          {{ procesando ? 'Procesando…' : 'Confirmar y pagar (Directo)' }}
+        </button>
+
+        <p class="resumen-nota" style="font-size: 0.8rem; color: #64748b; margin-top: 0.5rem;">
+          Llamada directa: Frontend &rarr; ms-pagos (8085) &rarr; ms-carrito (8083). Sin proxy en backend.
+        </p>
+      </aside>
+    </div>
+  </div>
+</div>

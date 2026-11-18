@@ -1,0 +1,135 @@
+<div class="page-space">
+  <div class="catalogo-cabecera">
+    <div>
+      <h1>Catálogo de productos</h1>
+      <p class="muted">Precios y stock verificados contra ms-productos. Eventos analíticos transmitidos a Kafka.</p>
+    </div>
+
+    <form class="catalogo-buscador" (ngSubmit)="buscar()">
+      <input type="search" name="q" [(ngModel)]="terminoBusqueda" placeholder="Buscar por nombre…" aria-label="Buscar" />
+      <button class="btn btn-primary" type="submit">Buscar</button>
+    </form>
+  </div>
+
+  <div class="alert alert-error" *ngIf="error">
+    {{ error }}
+    <button class="btn btn-sm btn-secondary" type="button" (click)="cargarProductos()">Reintentar</button>
+  </div>
+
+  <div class="chip-bar" *ngIf="categorias.length > 0">
+    <button class="chip" [class.active]="categoriaSeleccionada === null"
+            (click)="filtrarCategoria(null)">Todas</button>
+    <button class="chip" *ngFor="let cat of categorias"
+            [class.active]="categoriaSeleccionada === cat"
+            (click)="filtrarCategoria(cat)">{{ cat }}</button>
+  </div>
+
+  <div class="loading" *ngIf="cargando">
+    <div class="spinner"></div>
+    Cargando catálogo...
+  </div>
+
+  <div class="product-grid" *ngIf="!cargando && productos.length > 0">
+    <article class="product-card" *ngFor="let producto of productos">
+      <div class="product-card-media">
+        <img class="product-card-img" [src]="imagenDe(producto)" [alt]="producto.nombre" loading="lazy" />
+        <span class="product-card-stock" *ngIf="producto.stock > 0">{{ producto.stock }} disponibles</span>
+        <span class="product-card-stock out" *ngIf="producto.stock <= 0">Sin stock</span>
+      </div>
+      <div class="product-card-body">
+        <span class="product-card-category">{{ producto.categoria }}</span>
+        <h3 class="product-card-title">{{ producto.nombre }}</h3>
+        <p class="product-card-desc">{{ producto.descripcion }}</p>
+        <div class="product-card-footer">
+          <span class="product-card-price">${{ producto.precio | number:'1.0-0' }}</span>
+          <div style="display: flex; gap: 0.5rem;">
+            <button class="btn btn-outline btn-sm" type="button" (click)="verDetalle(producto)">
+              Ver detalle
+            </button>
+            <button class="btn btn-primary" type="button"
+                    [disabled]="producto.stock <= 0 || agregando === producto.id"
+                    (click)="agregarAlCarrito(producto)">
+              {{ agregando === producto.id ? 'Agregando…' : 'Agregar' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </article>
+  </div>
+
+  <div class="empty-state" *ngIf="!cargando && productos.length === 0 && !error">
+    <div class="empty-state-icon" aria-hidden="true">&#128269;</div>
+    <h3>No encontramos productos</h3>
+    <p *ngIf="terminoBusqueda || categoriaSeleccionada">
+      No hay resultados para los filtros aplicados.
+    </p>
+    <p *ngIf="!terminoBusqueda && !categoriaSeleccionada">
+      El catálogo está vacío en este momento.
+    </p>
+    <button class="btn btn-primary btn-lg" type="button" (click)="limpiarFiltros()"
+            *ngIf="terminoBusqueda || categoriaSeleccionada">Limpiar filtros</button>
+  </div>
+
+  <!-- Sección de Recomendaciones Hiperpersonalizadas (Evaluación 3) -->
+  <section *ngIf="recomendaciones.length > 0" style="margin-top: 3.5rem; padding-top: 2rem; border-top: 1px solid #e2e8f0;">
+    <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 1.25rem;">
+      <div>
+        <h2 style="margin: 0; font-size: 1.5rem; color: #1e293b;">&#10024; Recomendados para ti</h2>
+        <p class="muted" style="margin: 4px 0 0; font-size: 0.875rem;">
+          Sugerencias dinámicas calculadas en tiempo real por el Pipeline de Analítica con Kafka y DynamoDB NoSQL.
+        </p>
+      </div>
+      <span class="badge" style="background: #e0f2fe; color: #0369a1; font-weight: 600;">
+        Inteligencia Predictiva
+      </span>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 1rem;">
+      <div *ngFor="let rec of recomendaciones" class="panel" style="padding: 1rem; display: flex; flex-direction: column; justify-content: space-between;">
+        <div>
+          <img [src]="rec.imagenUrl" [alt]="rec.nombre" style="width: 100%; height: 140px; object-fit: cover; border-radius: 6px; margin-bottom: 0.75rem;" />
+          <span style="font-size: 0.75rem; color: #64748b; text-transform: uppercase; font-weight: 600;">{{ rec.categoria }}</span>
+          <h4 style="margin: 4px 0 6px; font-size: 1rem;">{{ rec.nombre }}</h4>
+          <p style="font-size: 0.8rem; color: #0284c7; background: #f0f9ff; padding: 4px 6px; border-radius: 4px; margin: 0 0 0.75rem;">
+            {{ rec.motivo }}
+          </p>
+        </div>
+        <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #f1f5f9; padding-top: 0.75rem;">
+          <span style="font-weight: 700; color: #0f172a;">${{ rec.precio | number:'1.0-0' }}</span>
+          <button class="btn btn-outline btn-sm" type="button" (click)="agregarAlCarrito(rec)">
+            Agregar
+          </button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Detalle del producto: GET /productos/{id} también publica VER_PRODUCTO en Kafka -->
+  <div *ngIf="detalle" class="panel"
+       style="position: fixed; inset: 0; margin: auto; max-width: 520px; height: fit-content; z-index: 60; padding: 1.5rem;">
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem;">
+      <div>
+        <span style="font-size: 0.75rem; color: #64748b; text-transform: uppercase; font-weight: 600;">
+          {{ detalle.categoria }}
+        </span>
+        <h2 style="margin: 4px 0 8px; font-size: 1.35rem;">{{ detalle.nombre }}</h2>
+      </div>
+      <button class="btn btn-sm btn-secondary" type="button" (click)="cerrarDetalle()">Cerrar</button>
+    </div>
+    <img [src]="imagenDe(detalle)" [alt]="detalle.nombre"
+         style="width: 100%; height: 220px; object-fit: cover; border-radius: 8px; margin-bottom: 1rem;" />
+    <p style="color: #334155; font-size: 0.95rem; line-height: 1.5;">{{ detalle.descripcion }}</p>
+    <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #e2e8f0; padding-top: 1rem;">
+      <div>
+        <strong style="font-size: 1.25rem;">${{ detalle.precio | number:'1.0-0' }}</strong>
+        <span class="muted" style="display: block; font-size: 0.8rem;">Stock: {{ detalle.stock }}</span>
+      </div>
+      <button class="btn btn-primary" type="button"
+              [disabled]="detalle.stock <= 0 || agregando === detalle.id"
+              (click)="agregarAlCarrito(detalle)">
+        {{ agregando === detalle.id ? 'Agregando…' : 'Agregar al carrito' }}
+      </button>
+    </div>
+  </div>
+
+</div>

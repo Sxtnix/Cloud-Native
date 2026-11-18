@@ -1,0 +1,187 @@
+services:
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"   # AMQP (productores y consumidores con ACK)
+      - "15672:15672" # Consola Web RabbitMQ (http://localhost:15672 guest/guest)
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    volumes:
+      - ./rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+    restart: unless-stopped
+
+  # Broker de Apache Kafka en modo KRaft (sin ZooKeeper)
+  kafka:
+    image: apache/kafka:3.9.0
+    container_name: kafka
+    ports:
+      - "9092:9092"
+      - "127.0.0.1:9094:9094"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:9094
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:9094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    restart: unless-stopped
+
+  # Consola de administración visual Kafka-UI (EP5 - Requerimiento explícito)
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    ports:
+      - "8088:8080" # http://localhost:8088
+    environment:
+      KAFKA_CLUSTERS_0_NAME: pedidos360-cluster
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+    depends_on:
+      - kafka
+    restart: unless-stopped
+
+  # DynamoDB Local para almacenamiento NoSQL en la nube (+2 puntos extra)
+  dynamodb-local:
+    image: amazon/dynamodb-local:latest
+    container_name: dynamodb-local
+    ports:
+      - "8000:8000"
+    command: "-jar DynamoDBLocal.jar -sharedDb -inMemory"
+    restart: unless-stopped
+
+  ms-productos:
+    build: ./ms-productos
+    container_name: ms-productos
+    ports:
+      - "8081:8081"
+      - "18081:8081"
+    environment:
+      AZURE_ISSUER_URI: https://login.microsoftonline.com/9150f81f-b0fc-436d-998d-dcb5cf883d2e/v2.0
+      AUTH_BYPASS: ${AUTH_BYPASS:-false}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    depends_on:
+      - kafka
+    restart: unless-stopped
+
+  ms-identidad:
+    build: ./ms-identidad
+    container_name: ms-identidad
+    ports:
+      - "8082:8082"
+    environment:
+      AZURE_ISSUER_URI: https://login.microsoftonline.com/9150f81f-b0fc-436d-998d-dcb5cf883d2e/v2.0
+      AUTH_BYPASS: ${AUTH_BYPASS:-false}
+    restart: unless-stopped
+
+  ms-carrito:
+    build: ./ms-carrito
+    container_name: ms-carrito
+    ports:
+      - "8083:8083"
+    environment:
+      AZURE_ISSUER_URI: https://login.microsoftonline.com/9150f81f-b0fc-436d-998d-dcb5cf883d2e/v2.0
+      AUTH_BYPASS: ${AUTH_BYPASS:-false}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USERNAME: guest
+      RABBITMQ_PASSWORD: guest
+      PRODUCTOS_SERVICE_URL: http://ms-productos:8081/productos
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      DB_URL: jdbc:h2:file:/data/pedidos360_carrito
+    volumes:
+      - carrito-data:/data
+    depends_on:
+      - rabbitmq
+      - kafka
+      - ms-productos
+    restart: unless-stopped
+
+  ms-email:
+    build: ./ms-email
+    container_name: ms-email
+    ports:
+      - "8084:8084"
+    environment:
+      AZURE_ISSUER_URI: https://login.microsoftonline.com/9150f81f-b0fc-436d-998d-dcb5cf883d2e/v2.0
+      AUTH_BYPASS: ${AUTH_BYPASS:-false}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USERNAME: guest
+      RABBITMQ_PASSWORD: guest
+      MAIL_HOST: smtp.gmail.com
+      MAIL_PORT: "587"
+      MAIL_USERNAME: ${MAIL_USERNAME:-}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:-no-reply@pedidos360.cl}
+    depends_on:
+      - rabbitmq
+    restart: unless-stopped
+
+  # Microservicio de Pagos y Antifraude (Desacoplado, puerto directo 8085, NO PROXY)
+  ms-pagos:
+    build: ./ms-pagos
+    container_name: ms-pagos
+    ports:
+      - "8085:8085"
+    environment:
+      AZURE_ISSUER_URI: https://login.microsoftonline.com/9150f81f-b0fc-436d-998d-dcb5cf883d2e/v2.0
+      AUTH_BYPASS: ${AUTH_BYPASS:-false}
+      DB_URL: jdbc:h2:file:/data/pedidos360_pagos
+      # Publica el resultado del pago en RabbitMQ (sin llamadas HTTP a ms-carrito)
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USERNAME: guest
+      RABBITMQ_PASSWORD: guest
+      # Publica las alertas antifraude en el tópico Kafka pedidos360.alertas
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    volumes:
+      - pagos-data:/data
+    depends_on:
+      - rabbitmq
+      - kafka
+    restart: unless-stopped
+
+  # Microservicio de Monitoreo, Analítica, WebSockets y Administrador de RabbitMQ y Kafka
+  ms-monitoreo:
+    build: ./ms-monitoreo
+    container_name: ms-monitoreo
+    ports:
+      - "8086:8086"
+    environment:
+      AZURE_ISSUER_URI: https://login.microsoftonline.com/9150f81f-b0fc-436d-998d-dcb5cf883d2e/v2.0
+      AUTH_BYPASS: ${AUTH_BYPASS:-false}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USERNAME: guest
+      RABBITMQ_PASSWORD: guest
+      DYNAMODB_ENDPOINT: http://dynamodb-local:8000
+    depends_on:
+      - kafka
+      - rabbitmq
+      - dynamodb-local
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./pedidos360-frontend
+      args:
+        NG_BUILD_CONFIG: ${NG_BUILD_CONFIG:-docker}
+    container_name: pedidos360-frontend
+    ports:
+      - "80:80"
+      - "4200:80"
+    depends_on:
+      - ms-productos
+      - ms-identidad
+      - ms-carrito
+      - ms-pagos
+      - ms-monitoreo
+    restart: unless-stopped
+
+volumes:
+  carrito-data:
+  pagos-data:

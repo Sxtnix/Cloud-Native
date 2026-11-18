@@ -1,0 +1,284 @@
+================================================================================
+   GUÍA DE DESPLIEGUE Y DEMOSTRACIÓN — PEDIDOS360
+   Para: Tommy (encargado de desplegar y presentar)
+   Actualizada: 2026-11-16
+================================================================================
+
+Hola Tommy. Este archivo reemplaza a las guías anteriores (ya no existen
+GUIA-DESPLIEGUE.txt, ayuda.txt ni KAFKA-MONITOREO.txt). Aquí está TODO lo que
+necesitas para levantar el proyecto y demostrar cada punto evaluado.
+
+CORRECCIÓN DEL PROFESOR — EVALUACIÓN 2: "NO USAR PROXY EN EL BACKEND"
+--------------------------------------------------------------------
+Ahora es 100% real en el código:
+  1. El frontend llama DIRECTO a ms-pagos (http://localhost:8085/pagos/procesar).
+  2. Se eliminó el PagoClient de ms-carrito y sus endpoints /pedidos/{id}/pago y
+     /pedidos/{id}/confirmar-pago.
+  3. ms-pagos ya NO llama por HTTP a ms-carrito: publica el resultado del pago
+     en RabbitMQ (pedidos360.pagos.resultado) y ms-carrito lo consume.
+  4. No hay API Gateway ni reverse proxy: cada microservicio responde en su
+     propio puerto con CORS habilitado.
+  Para demostrarlo: F12 → pestaña Red → pagar en el checkout → la petición POST
+  va directo a http://localhost:8085/pagos/procesar.
+
+
+================================================================================
+1. MAPA DE SERVICIOS Y PUERTOS
+================================================================================
+El stack de docker-compose tiene 11 contenedores:
+
+  [Frontend]
+  - Tienda Angular 17:             http://localhost:4200  (y http://localhost)
+  - Dashboard en vivo (WebSocket): http://localhost:4200/dashboard
+
+  [Microservicios (Java 17 / Spring Boot 3.2)]
+  - ms-productos:                  http://localhost:8081/productos
+  - ms-identidad:                  http://localhost:8082/usuarios
+  - ms-carrito:                    http://localhost:8083/carrito
+  - ms-email:                      http://localhost:8084/emails  (sin puerto público requerido)
+  - ms-pagos:                      http://localhost:8085/pagos    <-- LLAMADO DIRECTO
+  - ms-monitoreo:                  http://localhost:8086/monitoreo
+      * WebSocket métricas:        ws://localhost:8086/ws-metricas
+      * Admin RabbitMQ:            http://localhost:8086/admin/rabbitmq/*
+      * Admin Kafka:               http://localhost:8086/admin/kafka/*
+      * Analítica/DynamoDB:        http://localhost:8086/analytics/*
+
+  [Infraestructura]
+  - RabbitMQ (colas + DLQ):        http://localhost:15672  (guest / guest)
+  - Kafka (KRaft):                 localhost:9092  (externo: localhost:9094)
+  - Kafka-UI (consola gráfica):    http://localhost:8088   <-- EP5
+  - DynamoDB Local (NoSQL):        http://localhost:8000   <-- +2 puntos
+
+
+================================================================================
+2. DESPLIEGUE PASO A PASO
+================================================================================
+Paso 1 — Abrir la carpeta del proyecto:
+    cd cloud-testing-main
+
+Paso 2 — Crear el archivo .env:
+    Windows PowerShell:  copy .env.example .env
+    Linux / Mac:         cp .env.example .env
+
+    Para una DEMO RÁPIDA sin Azure, deja en .env:
+        AUTH_BYPASS=true
+        NG_BUILD_CONFIG=docker
+    Para evaluar el LOGIN REAL con Microsoft Entra ID:
+        AUTH_BYPASS=false
+
+    (Opcional) Para correos reales, completa MAIL_USERNAME / MAIL_PASSWORD con
+    una "app password" de Gmail. Sin eso, los correos se reintentan y terminan
+    en la DLQ: la compra funciona igual.
+
+Paso 3 — Construir y levantar todo:
+    docker compose up -d --build
+
+Paso 4 — Verificar contenedores:
+    docker compose ps
+
+    Deben aparecer: rabbitmq, kafka, kafka-ui, dynamodb-local, ms-productos,
+    ms-identidad, ms-carrito, ms-email, ms-pagos, ms-monitoreo y
+    pedidos360-frontend.
+
+Paso 5 — Abrir la tienda:
+    http://localhost:4200
+
+    Si AUTH_BYPASS=false, inicia sesión con la cuenta del tenant de Azure.
+    Si AUTH_BYPASS=true, entra directo sin login.
+
+
+================================================================================
+3. CÓMO DEMOSTRAR CADA REQUERIMIENTO
+================================================================================
+
+--------------------------------------------------------------------------------
+A) FALTANTE EVALUACIÓN 2 — SIN PROXY EN EL BACKEND
+--------------------------------------------------------------------------------
+Qué mostrar:
+  1. Abre el checkout (http://localhost:4200/checkout), agrega productos y paga.
+  2. F12 → Red/Network: el POST va a http://localhost:8085/pagos/procesar.
+     No pasa por ms-carrito ni por un API Gateway.
+  3. Muestra en el código que ya no existe `PagoClient`:
+         ms-carrito/src/main/java/com/pedidos360/carrito/integration/
+     Solo queda ProductoClient.java.
+  4. Muestra que el resultado del pago viaja por RabbitMQ:
+         ms-pagos  -> PagoEventPublisher -> cola pedidos360.pagos.resultado
+         ms-carrito -> PagoResultadoListener (ACK/NACK manual)
+
+Cómo se actualiza el pedido:
+  - APROBADO  -> el pedido pasa a CONFIRMADO / APROBADO.
+  - RECHAZADO -> CANCELADO / RECHAZADO y se restaura el carrito.
+  - El listener es idempotente: si RabbitMQ reentrega, no duplica la acción.
+
+--------------------------------------------------------------------------------
+B) EVALUACIÓN 3 — REGLA ANTIFRAUDE (ms-pagos)
+--------------------------------------------------------------------------------
+Regla: misma tarjeta más de 3 veces en 10 segundos → bloqueo preventivo + alerta.
+
+Demostración con 1 clic:
+  1. Ve al checkout (http://localhost:4200/checkout).
+  2. En "Panel de Evaluación: Reglas y Seguridad" pulsa:
+         "🚨 Probar Regla Antifraude (4 intentos en 2s)"
+  3. Los 3 primeros intentos se procesan; el 4.º devuelve HTTP 422
+     FRAUDE_DETECTADO y muestra "Transacción Bloqueada por Antifraude".
+  4. La alerta queda:
+     - Persistida en H2 y consultable en GET http://localhost:8085/pagos/alertas-fraude
+     - Publicada en Kafka: tópico pedidos360.alertas
+       (visible en Kafka-UI http://localhost:8088).
+  5. En el dashboard (http://localhost:4200/dashboard) se ve la alerta en vivo.
+
+Nota: los intentos de la demo usan pedidos ficticios 9001..9004; si el pedido no
+existe, el evento de resultado puede terminar en la DLQ de RabbitMQ. Es esperado.
+
+--------------------------------------------------------------------------------
+C) EVALUACIÓN 3 — RABBITMQ (EP3)
+--------------------------------------------------------------------------------
+Qué está implementado:
+  - Nombres centralizados en application.yml (app.rabbitmq.*) y @Configuration.
+  - ms-email: Queue + DirectExchange + Binding explícitos.
+  - ms-carrito y ms-pagos: exchange, cola de resultado de pago y DLQ.
+  - Consumidores con ACK/NACK manual (Channel) y reintentos.
+  - DLQ: pedidos360.emails.dlq y pedidos360.pagos.resultado.dlq.
+  - Microservicio administrador de RabbitMQ en ms-monitoreo.
+
+Cómo demostrarlo:
+  1. RabbitMQ Management: http://localhost:15672 (guest/guest).
+     - Colas: pedidos360.emails, pedidos360.emails.dlq,
+              pedidos360.pagos.resultado, pedidos360.pagos.resultado.dlq.
+     - Exchange: pedidos360.exchange.
+  2. Haz una compra y muestra cómo entra un mensaje a pedidos360.emails y sale
+     hacia ms-email.
+  3. Muestra el código:
+     - ms-email/.../config/RabbitConfig.java (Queue/Exchange/Binding)
+     - ms-email/.../listener/EmailListener.java (basicAck / basicNack)
+     - ms-carrito/.../messaging/PagoResultadoListener.java (resultado del pago)
+  4. Administrador desde el dashboard:
+     http://localhost:4200/dashboard → pestaña "🐰 RabbitMQ Admin"
+     Crea una cola (ej. pedidos360.promociones) y muéstrala en la consola 15672.
+
+Si MAIL_USERNAME/MAIL_PASSWORD están vacíos, ms-email agota 3 reintentos y los
+mensajes se mueven a pedidos360.emails.dlq: sirve para demostrar la DLQ.
+
+--------------------------------------------------------------------------------
+D) EVALUACIÓN 5 — APACHE KAFKA (EP5)
+--------------------------------------------------------------------------------
+Tópicos y productores:
+  - pedidos360.monitoreo  <- ms-carrito (checkout, pago, cambio de estado).
+  - pedidos360.navegacion <- ms-productos (VER_PRODUCTO) y ms-carrito
+                             (AGREGAR_CARRITO) → clickstream.
+  - pedidos360.alertas    <- ms-pagos (alertas antifraude).
+  Consumidores: ms-monitoreo con grupos ms-monitoreo-group, ms-analytics-group
+  y ms-alertas-group.
+  Administrador: AdminClient real (crear/listar/eliminar tópicos y consumer groups).
+
+Cómo demostrarlo:
+  1. Kafka-UI: http://localhost:8088
+     - Clúster: pedidos360-cluster.
+     - Muestra los 3 tópicos y los mensajes JSON en vivo.
+  2. Navega el catálogo, agrega productos y paga: aparecen eventos
+     VER_PRODUCTO / AGREGAR_CARRITO / PEDIDO_REGISTRADO / PAGO_APROBADO.
+  3. Dashboard → pestaña "⚡ Kafka Admin & UI":
+     crea un tópico (ej. pedidos360.auditoria, 3 particiones) y muéstralo en
+     Kafka-UI.
+  4. API directa:
+        curl http://localhost:8086/monitoreo/eventos
+        curl http://localhost:8086/monitoreo/estadisticas
+
+--------------------------------------------------------------------------------
+E) EXTRAS — WEBSOCKETS (+3), DYNAMODB (+2), WEBPAY (+5)
+--------------------------------------------------------------------------------
+1. WebSockets:
+   - http://localhost:4200/dashboard → indicador "WebSocket EN VIVO".
+   - Abre el catálogo en otra pestaña y haz clic en "Ver detalle" de productos.
+   - El dashboard actualiza clics/minuto y productos más vistos en tiempo real
+     por ws://localhost:8086/ws-metricas.
+
+2. DynamoDB (implementación REAL con AWS SDK v2):
+   - Tabla: pedidos360_navegacion
+     PK usuarioId (S) + SK eventoId (S)
+   - Se crea automáticamente en DynamoDB Local (http://localhost:8000).
+   - Cada VER_PRODUCTO / AGREGAR_CARRITO se persiste y alimenta:
+        GET http://localhost:8086/analytics/recomendaciones?usuarioId=...
+   - En el catálogo se ve "✨ Recomendados para ti".
+   - Si DynamoDB no responde, el servicio sigue con respaldo en memoria
+     (se ve un warning en los logs). DYNAMODB_ENABLED=false fuerza ese modo.
+
+3. Webpay Plus (simulado):
+   - En el checkout elige "Webpay Plus".
+   - Se genera token/URL de Transbank y se confirma la transacción.
+   - El resultado también se publica por RabbitMQ y actualiza el pedido.
+
+
+================================================================================
+4. VERIFICACIÓN TÉCNICA (lo que ya se ejecutó)
+================================================================================
+Compilación + pruebas de los 6 microservicios:
+
+  - ms-productos:  7 tests OK
+  - ms-identidad:  2 tests OK
+  - ms-carrito:   22 tests OK
+  - ms-pagos:     13 tests OK
+  - ms-email:     10 tests OK
+  - ms-monitoreo:  8 tests OK
+  ------------------------------------------------------------------
+  TOTAL:          62 tests, 0 fallos
+
+Frontend: `npx ng build` sin errores.
+
+Variables de entorno relevantes (ya configuradas en docker-compose):
+  - ms-carrito: PRODUCTOS_SERVICE_URL, RABBITMQ_*, KAFKA_BOOTSTRAP_SERVERS
+  - ms-pagos:   RABBITMQ_*, KAFKA_BOOTSTRAP_SERVERS
+  - ms-monitoreo: KAFKA_BOOTSTRAP_SERVERS, RABBITMQ_*, DYNAMODB_ENDPOINT
+  - ms-email:   RABBITMQ_*, MAIL_*
+  NO existe PAGOS_SERVICE_URL: el pago es directo del frontend a ms-pagos.
+
+
+================================================================================
+5. COMANDOS ÚTILES
+================================================================================
+- Ver logs:
+    docker compose logs -f ms-pagos
+    docker compose logs -f ms-carrito
+    docker compose logs -f ms-monitoreo
+
+- Reconstruir un solo servicio tras cambiar código:
+    docker compose up -d --build ms-pagos
+
+- Detener todo:
+    docker compose down
+
+- Reinicio limpio (borra volúmenes de H2):
+    docker compose down -v
+
+- Probar endpoints:
+    curl http://localhost:8081/productos
+    curl http://localhost:8085/pagos/alertas-fraude
+    curl http://localhost:8086/monitoreo/eventos
+    curl http://localhost:8086/analytics/metricas-en-vivo
+
+
+================================================================================
+6. PROBLEMAS FRECUENTES
+================================================================================
+- El frontend muestra 401 en pagos o monitoreo:
+    Falta el scope en MSAL o AUTH_BYPASS no está alineado. Para demo usa
+    AUTH_BYPASS=true en .env y NG_BUILD_CONFIG=docker.
+
+- No aparecen eventos en Kafka:
+    Verifica que los contenedores kafka y ms-monitoreo estén arriba y que
+    KAFKA_BOOTSTRAP_SERVERS sea kafka:9092 dentro de Docker.
+
+- Los correos no llegan:
+    Es esperado sin MAIL_USERNAME/MAIL_PASSWORD. Revisa la DLQ en 15672.
+
+- DynamoDB no persiste:
+    Revisa que dynamodb-local esté arriba y que DYNAMODB_ENDPOINT sea
+    http://dynamodb-local:8000. El servicio cae a memoria si no responde.
+
+- Cambiar de tenant de Azure:
+    Revisa AZURE_ISSUER_URI (.env / docker-compose), environment.docker.ts y
+    environment.prod.ts (clientId, tenantId, redirectUri).
+
+================================================================================
+FIN — ¡Éxito con la presentación, Tommy!
+================================================================================

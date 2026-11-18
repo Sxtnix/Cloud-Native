@@ -1,0 +1,64 @@
+server:
+  port: 8085
+
+spring:
+  application:
+    name: ms-pagos
+
+  datasource:
+    url: ${DB_URL:jdbc:h2:mem:pedidos360_pagos}
+    username: ${DB_USERNAME:sa}
+    password: ${DB_PASSWORD:}
+    driver-class-name: org.h2.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.H2Dialect
+
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+  # RabbitMQ: el resultado del pago se publica como evento (sin proxy HTTP)
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+
+  # Kafka: alertas de fraude en el tópico pedidos360.alertas (EP5)
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${AZURE_ISSUER_URI:https://login.microsoftonline.com/9150f81f-b0fc-436d-998d-dcb5cf883d2e/v2.0}
+
+# Prueba local sin Azure (AUTH_BYPASS=true): no se exige JWT.
+# Por defecto false => autenticacion completa con Microsoft Entra ID.
+app:
+  auth:
+    bypass: ${AUTH_BYPASS:false}
+
+  # Nombres centralizados de RabbitMQ (EP3)
+  rabbitmq:
+    exchange: ${RABBITMQ_EXCHANGE:pedidos360.exchange}
+    queue-pago-resultado: ${RABBITMQ_QUEUE_PAGO_RESULTADO:pedidos360.pagos.resultado}
+    queue-pago-resultado-dlq: ${RABBITMQ_QUEUE_PAGO_RESULTADO_DLQ:pedidos360.pagos.resultado.dlq}
+    routing-key-pago-resultado: ${RABBITMQ_ROUTING_KEY_PAGO_RESULTADO:pedidos360.pagos.resultado.routing}
+
+  # Tópico Kafka de alertas de seguridad (EP5)
+  kafka:
+    topic-alertas: ${KAFKA_TOPIC_ALERTAS:pedidos360.alertas}
+
